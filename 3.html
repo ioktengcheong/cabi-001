@@ -3,8 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Runner 入櫃掃描（固定版位 + 轉正 OCR）</title>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <title>Runner 極簡影相留底（IndexedDB 慳位版）</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -15,302 +14,182 @@
       --accent: #38bdf8;
       --green: #22c55e;
       --amber: #f59e0b;
+      --red: #ef4444;
       --border: #475569;
     }
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft JhengHei", sans-serif; }
     body { margin: 0; background: var(--bg); color: var(--text); padding: 14px; }
 
-    .wrap { max-width: 740px; margin: 0 auto; }
+    .wrap { max-width: 640px; margin: 0 auto; }
     .top-bar {
       display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
-      background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; margin-bottom: 14px;
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px;
     }
-    .top-bar h1 { margin: 0; font-size: 1.2rem; }
-    .pill { background: var(--card-light); padding: 6px 12px; border-radius: 999px; font-size: 0.92rem; font-weight: 700; }
+    .top-bar h1 { margin: 0; font-size: 1.25rem; }
+    .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+    .pill { background: var(--card-light); padding: 6px 12px; border-radius: 999px; font-size: 0.92rem; font-weight: 800; color: var(--accent); }
+    .pill.warn { color: #fde68a; background: rgba(245, 158, 11, 0.2); }
 
     .box {
-      background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 14px;
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 14px;
     }
-    h2 { margin: 0 0 10px; font-size: 1.15rem; }
 
     .photo-btn {
-      display: flex; align-items: center; justify-content: center; gap: 10px;
-      width: 100%; padding: 18px; border-radius: 12px; border: 2px dashed var(--accent);
-      background: rgba(56, 189, 248, 0.12); color: #fff; font-size: 1.25rem; font-weight: 800; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 12px;
+      width: 100%; padding: 26px 16px; border-radius: 14px; border: 3px dashed var(--accent);
+      background: rgba(56, 189, 248, 0.14); color: #fff; font-size: 1.45rem; font-weight: 900; cursor: pointer;
     }
+    .photo-btn:hover { background: rgba(56, 189, 248, 0.22); }
 
     .preview-img {
-      width: 100%; max-height: 280px; object-fit: contain; border-radius: 10px;
-      margin-top: 12px; background: #000; display: none; border: 1px solid var(--border);
+      width: 100%; max-height: 320px; object-fit: contain; border-radius: 12px;
+      margin-top: 14px; background: #000; display: none; border: 1px solid var(--border);
     }
-
-    .rot-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-    .btn-rot {
-      padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
-      background: var(--card-light); color: #fff; font-weight: 700; font-size: 0.9rem; cursor: pointer;
-    }
-
-    .status-text { margin-top: 10px; font-size: 0.98rem; color: var(--amber); font-weight: 700; min-height: 24px; }
-
-    .door-banner {
-      background: #0f172a; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-top: 12px;
-      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
-    }
-    .door-big { font-size: 1.7rem; font-weight: 900; color: var(--accent); }
-    .cab-sub { font-size: 0.98rem; color: #cbd5e1; }
-
-    label { display: block; font-size: 0.94rem; font-weight: 700; margin-bottom: 5px; color: #e2e8f0; }
-    select, input[type="text"] {
-      width: 100%; padding: 11px 12px; font-size: 1.05rem; border-radius: 10px;
-      border: 2px solid var(--border); background: #0f172a; color: #fff;
-    }
-    select:focus, input[type="text"]:focus { outline: none; border-color: var(--accent); }
-
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
-    @media (max-width: 560px) { .grid-2 { grid-template-columns: 1fr; } }
 
     .btn-save {
-      width: 100%; padding: 18px; font-size: 1.28rem; font-weight: 900; border-radius: 12px;
+      width: 100%; padding: 20px; font-size: 1.4rem; font-weight: 900; border-radius: 14px;
       border: none; background: var(--green); color: #052e16; cursor: pointer; margin-top: 14px;
     }
-
-    details {
-      background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; margin-bottom: 14px;
-    }
-    summary { font-weight: 800; font-size: 1rem; cursor: pointer; color: var(--accent); }
-    .btn-mini {
-      margin-top: 10px; padding: 9px 14px; font-size: 0.92rem; font-weight: 700; border-radius: 8px;
-      border: none; background: var(--accent); color: #082f49; cursor: pointer;
-    }
-    .raw-ocr-box {
-      width: 100%; min-height: 110px; margin-top: 10px; padding: 10px; border-radius: 8px;
-      border: 1px solid var(--border); background: #0f172a; color: #cbd5e1; font-size: 0.85rem;
-    }
+    .btn-save:hover { filter: brightness(1.06); }
 
     .sub-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
     .btn-sub {
-      padding: 12px; font-size: 0.98rem; font-weight: 700; border-radius: 10px;
+      padding: 13px; font-size: 1rem; font-weight: 700; border-radius: 10px;
       border: 1px solid var(--border); background: var(--card-light); color: #fff; cursor: pointer;
     }
-    .recent-list { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
-    .recent-item {
-      background: #0f172a; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
-      display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 0.92rem;
+    .btn-clear {
+      margin-top: 10px; width: 100%; padding: 11px; font-size: 0.95rem; font-weight: 700;
+      border-radius: 10px; border: 1px solid rgba(239, 68, 68, 0.5); background: rgba(239, 68, 68, 0.12);
+      color: #fca5a5; cursor: pointer;
     }
-    .badge-busy { background: rgba(239, 68, 68, 0.2); color: #fca5a5; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 0.82rem; }
+
+    h2 { margin: 0 0 10px; font-size: 1.15rem; }
+    .recent-list { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .recent-item {
+      background: #0f172a; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .recent-left { display: flex; align-items: center; gap: 12px; }
+    .recent-thumb {
+      width: 58px; height: 58px; object-fit: cover; border-radius: 8px;
+      border: 1px solid var(--border); background: #000; flex-shrink: 0;
+    }
+    .recent-time { font-size: 1.05rem; font-weight: 800; }
+    .recent-sub { font-size: 0.88rem; color: var(--muted); margin-top: 2px; }
+    .btn-del {
+      padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--card-light); color: #fca5a5; font-weight: 700; cursor: pointer;
+    }
   </style>
 </head>
 <body>
 <div class="wrap">
   <div class="top-bar">
-    <h1>🏃 Runner 入櫃掃描（固定版位 OCR）</h1>
-    <div class="pill" id="count-pill">已入櫃: 0 / 96</div>
+    <h1>📷 Runner 影相留底</h1>
+    <div class="pills">
+      <div class="pill" id="count-pill">已影: 0 張</div>
+      <div class="pill warn" id="size-pill">佔用: 0.0 MB</div>
+    </div>
   </div>
 
   <div class="box">
-    <h2>1. 影相 / 識別（Barcode 尾兩位變門號 + 定點 OCR）</h2>
-
     <label class="photo-btn" for="photo-input">
-      📷 點擊影相 / 揀相
+      📸 影相 / 揀相
     </label>
     <input type="file" id="photo-input" accept="image/*" capture="environment" hidden />
     <img id="photo-preview" class="preview-img" alt="相片預覽" />
 
-    <div class="rot-bar">
-      <button class="btn-rot" type="button" onclick="rotateAndReocr(90)">↻ 轉 90° 再認</button>
-      <button class="btn-rot" type="button" onclick="rotateAndReocr(270)">↺ 轉 270° 再認</button>
-      <button class="btn-rot" type="button" onclick="rotateAndReocr(180)">↕ 轉 180° 再認</button>
-    </div>
-
-    <div class="status-text" id="status-text"></div>
-
-    <div class="door-banner">
-      <div>
-        <div class="door-big" id="show-door">Door #01</div>
-        <div class="cab-sub" id="show-cab">所屬分區：Cabinet 1（門號 1–40）</div>
-      </div>
-      <div id="door-status-badge"></div>
-    </div>
-
-    <div class="grid-2">
-      <div>
-        <label for="f-barcode">熱敏紙 Barcode（尾兩位自動變門號）</label>
-        <input type="text" id="f-barcode" placeholder="例如: 637890132" oninput="applyDoorFromBarcode()" />
-      </div>
-      <div>
-        <label for="door-select">門號（由 Barcode 尾兩位帶出；可手動改）</label>
-        <select id="door-select" onchange="refreshDoorDisplay()"></select>
-      </div>
-      <div>
-        <label for="f-po">PO Number</label>
-        <input type="text" id="f-po" placeholder="由 P/O no: 捉出" />
-      </div>
-      <div>
-        <label for="f-grn">Goods Receipt No.</label>
-        <input type="text" id="f-grn" placeholder="由 Goods Receipt No.: 捉出" />
-      </div>
-      <div>
-        <label for="f-dept">Department Name</label>
-        <input type="text" id="f-dept" placeholder="由 Department: 捉出" />
-      </div>
-      <div>
-        <label for="f-req">Requestor（下方/對應值）</label>
-        <input type="text" id="f-req" placeholder="由 Requestor 捉出" />
-      </div>
-    </div>
-
-    <button class="btn-save" onclick="saveEntry()">✅ 完成入櫃並鎖定門號</button>
+    <button class="btn-save" type="button" onclick="savePhoto()">✅ 儲存呢張相（下一張）</button>
   </div>
 
-  <details>
-    <summary>⚙️ 自訂 OCR 標籤與檢視原始辨識文字</summary>
-    <div class="grid-2">
-      <div>
-        <label for="cfg-po">PO Number 標籤</label>
-        <input type="text" id="cfg-po" />
-      </div>
-      <div>
-        <label for="cfg-grn">Goods Receipt No. 標籤</label>
-        <input type="text" id="cfg-grn" />
-      </div>
-      <div>
-        <label for="cfg-dept">Department 標籤</label>
-        <input type="text" id="cfg-dept" />
-      </div>
-      <div>
-        <label for="cfg-req">Requestor 標籤</label>
-        <input type="text" id="cfg-req" />
-      </div>
-    </div>
-    <button class="btn-mini" type="button" onclick="saveRules()">💾 儲存標籤設定</button>
-
-    <label style="margin-top:12px;" for="raw-ocr-output">辨識原始文字（方便 Admin 對照調校）</label>
-    <textarea id="raw-ocr-output" class="raw-ocr-box" readonly placeholder="影相辨識後會顯示喺度..."></textarea>
-  </details>
-
   <div class="box">
-    <h2>📋 最近入櫃紀錄與匯出</h2>
+    <h2>📋 已影相片清單（交俾 Admin 處理）</h2>
     <div class="sub-actions">
-      <button class="btn-sub" onclick="exportCsv()">📊 匯出 CSV</button>
-      <button class="btn-sub" onclick="exportJson()">💾 匯出 JSON</button>
+      <button class="btn-sub" type="button" onclick="exportJson()">💾 匯出 JSON（含相片）</button>
+      <button class="btn-sub" type="button" onclick="exportCsv()">📊 匯出 CSV 清單</button>
     </div>
+    <button class="btn-clear" type="button" onclick="clearAll()">🗑️ 交收完成，清空本機紀錄</button>
     <div class="recent-list" id="recent-list"></div>
   </div>
 </div>
 
 <script>
-  const CABINETS = [
-    { id: 'CAB1', name: 'Cabinet 1', range: '1–40', start: 1, end: 40 },
-    { id: 'CAB2', name: 'Cabinet 2', range: '41–51', start: 41, end: 51 },
-    { id: 'CAB3', name: 'Cabinet 3', range: '52–66', start: 52, end: 66 },
-    { id: 'CAB4', name: 'Cabinet 4', range: '67–96', start: 67, end: 96 }
-  ];
+  const DB_NAME = 'RunnerPhotoDB_v1';
+  const STORE_NAME = 'photos';
+  let db = null;
+  let photos = [];
+  let draftDataUrl = '';
 
-  const DEFAULT_RULES = {
-    poLabel: 'P/O no:',
-    grnLabel: 'Goods Receipt No.:',
-    deptLabel: 'Department:',
-    reqLabel: 'Requestor'
-  };
-
-  let rules = { ...DEFAULT_RULES, ...JSON.parse(localStorage.getItem('runner_ocr_rules_v5') || '{}') };
-  let logs = JSON.parse(localStorage.getItem('runner_logs_v10') || '[]');
-  let currentPhoto = '';
-
-  function getCabByDoor(d) {
-    return CABINETS.find(c => d >= c.start && d <= c.end);
+  function openDb() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = e => {
+        const database = e.target.result;
+        if (!database.objectStoreNames.contains(STORE_NAME)) {
+          database.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        }
+      };
+      req.onsuccess = e => {
+        db = e.target.result;
+        resolve(db);
+      };
+      req.onerror = e => reject(e.target.error);
+    });
   }
 
-  function loadRulesToInputs() {
-    document.getElementById('cfg-po').value = rules.poLabel;
-    document.getElementById('cfg-grn').value = rules.grnLabel;
-    document.getElementById('cfg-dept').value = rules.deptLabel;
-    document.getElementById('cfg-req').value = rules.reqLabel;
+  function getAllFromDb() {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const list = (req.result || []).sort((a, b) => b.id - a.id);
+        resolve(list);
+      };
+      req.onerror = e => reject(e.target.error);
+    });
   }
 
-  function saveRules() {
-    rules = {
-      poLabel: document.getElementById('cfg-po').value.trim() || DEFAULT_RULES.poLabel,
-      grnLabel: document.getElementById('cfg-grn').value.trim() || DEFAULT_RULES.grnLabel,
-      deptLabel: document.getElementById('cfg-dept').value.trim() || DEFAULT_RULES.deptLabel,
-      reqLabel: document.getElementById('cfg-req').value.trim() || DEFAULT_RULES.reqLabel
-    };
-    localStorage.setItem('runner_ocr_rules_v5', JSON.stringify(rules));
-    alert('✅ 已儲存自訂 OCR 標籤！');
+  function putToDb(record) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).put(record);
+      tx.oncomplete = () => resolve();
+      tx.onerror = e => reject(e.target.error);
+    });
   }
 
-  function initSelect() {
-    const sel = document.getElementById('door-select');
-    sel.innerHTML = '';
-    for (let d = 1; d <= 96; d++) {
-      const cab = getCabByDoor(d);
-      const opt = document.createElement('option');
-      opt.value = d;
-      opt.textContent = `Door #${String(d).padStart(2, '0')} (${cab.name}: ${cab.range})`;
-      sel.appendChild(opt);
-    }
-    refreshDoorDisplay();
+  function deleteFromDb(id) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = e => reject(e.target.error);
+    });
   }
 
-  function isDoorBusy(d) {
-    return logs.some(x => x.door === d && x.status === 'OCCUPIED');
+  function clearDb() {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = e => reject(e.target.error);
+    });
   }
 
-  function refreshDoorDisplay() {
-    const d = parseInt(document.getElementById('door-select').value, 10);
-    const cab = getCabByDoor(d);
-    document.getElementById('show-door').textContent = `Door #${String(d).padStart(2, '0')}`;
-    document.getElementById('show-cab').textContent = `所屬分區：${cab.name}（門號 ${cab.range}）`;
-
-    const badge = document.getElementById('door-status-badge');
-    badge.innerHTML = isDoorBusy(d)
-      ? '<span class="badge-busy">⚠️ 已佔用</span>'
-      : '<span style="color:#4ade80; font-weight:700;">🟢 可入櫃</span>';
-  }
-
-  function fixDigits(s) {
-    return String(s || '')
-      .replace(/[Oo]/g, '0')
-      .replace(/[Il|]/g, '1')
-      .replace(/[Ss]/g, '5');
-  }
-
-  function applyDoorFromBarcode() {
-    const digits = fixDigits(document.getElementById('f-barcode').value.trim()).replace(/\D/g, '');
-    if (digits.length >= 2) {
-      const lastTwo = parseInt(digits.slice(-2), 10);
-      if (lastTwo >= 1 && lastTwo <= 96) {
-        document.getElementById('door-select').value = lastTwo;
-        refreshDoorDisplay();
-      }
-    }
-  }
-
-  // 清除 Department 前面常見嘅 OCR 亂碼/邊框符號，保留英數字、空格、&、-、/
-  function cleanDeptText(raw) {
-    let s = String(raw || '').trim();
-    // 常見亂碼如 "—H#A3i8H FinanceSS Corp Adm" -> 搵第一個正常英文字詞起點
-    const matchStart = s.match(/([A-Z][a-zA-Z]{2,}(?:\s+[A-Za-z0-9&/.-]+)*)/);
-    if (matchStart) {
-      s = matchStart[1].trim();
-    } else {
-      s = s.replace(/^[^A-Za-z0-9]+/, '').trim();
-    }
-    return s;
-  }
-
-  function loadAndResizeImage(file, maxWidth = 1600) {
+  // 控制喺 1100px 闊、品質 0.7，兼顧清晰度同細體積
+  function compressImage(file, maxWidth = 1100, quality = 0.7) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = e => {
         const img = new Image();
         img.onload = () => {
           const scale = img.width > maxWidth ? maxWidth / img.width : 1;
-          const c = document.createElement('canvas');
-          c.width = Math.round(img.width * scale);
-          c.height = Math.round(img.height * scale);
-          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-          resolve(c.toDataURL('image/jpeg', 0.85));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
         };
         img.onerror = reject;
         img.src = e.target.result;
@@ -320,277 +199,121 @@
     });
   }
 
-  function rotateImage(dataUrl, deg) {
-    return new Promise(resolve => {
-      const img = new Image();
-      img.onload = () => {
-        const c = document.createElement('canvas');
-        if (deg === 90 || deg === 270) {
-          c.width = img.height;
-          c.height = img.width;
-        } else {
-          c.width = img.width;
-          c.height = img.height;
-        }
-        const ctx = c.getContext('2d');
-        ctx.translate(c.width / 2, c.height / 2);
-        ctx.rotate((deg * Math.PI) / 180);
-        ctx.drawImage(img, -img.width / 2, -img.height / 2);
-        resolve(c.toDataURL('image/jpeg', 0.85));
-      };
-      img.src = dataUrl;
-    });
-  }
-
-  function cropRegion(dataUrl, rx, ry, rw, rh) {
-    return new Promise(resolve => {
-      const img = new Image();
-      img.onload = () => {
-        const sx = Math.round(img.width * rx);
-        const sy = Math.round(img.height * ry);
-        const sw = Math.max(10, Math.round(img.width * rw));
-        const sh = Math.max(10, Math.round(img.height * rh));
-
-        const c = document.createElement('canvas');
-        c.width = Math.round(sw * 1.5);
-        c.height = Math.round(sh * 1.5);
-        const ctx = c.getContext('2d');
-        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
-
-        const id = ctx.getImageData(0, 0, c.width, c.height);
-        const d = id.data;
-        for (let i = 0; i < d.length; i += 4) {
-          let g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-          g = ((g - 128) * 1.45) + 128;
-          g = Math.max(0, Math.min(255, g));
-          d[i] = d[i + 1] = d[i + 2] = g;
-        }
-        ctx.putImageData(id, 0, 0);
-        resolve(c.toDataURL('image/jpeg', 0.88));
-      };
-      img.src = dataUrl;
-    });
-  }
-
-  function escapeRegex(str) {
-    return String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  function extractByLabel(rawText, label, belowCount = 2) {
-    if (!rawText || !label) return '';
-    const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const pat = new RegExp(escapeRegex(label), 'i');
-
-    for (let i = 0; i < lines.length; i++) {
-      if (pat.test(lines[i])) {
-        const after = lines[i].replace(pat, '').replace(/^[:#\-\s]+/, '').trim();
-        if (after && /[A-Za-z0-9]/.test(after)) return after;
-        for (let k = 1; k <= belowCount && i + k < lines.length; k++) {
-          const val = lines[i + k].trim();
-          if (val && /[A-Za-z0-9]/.test(val) && !/[:：]$/.test(val)) {
-            return val;
-          }
-        }
-      }
-    }
-    return '';
-  }
-
-  async function ocrOnce(imgUrl) {
-    if (typeof Tesseract === 'undefined' || !Tesseract.recognize) return '';
-    const res = await Tesseract.recognize(imgUrl, 'eng');
-    return res.data?.text || '';
-  }
-
-  async function runSmartOcr(dataUrl) {
-    const st = document.getElementById('status-text');
-    st.textContent = '⏳ 正在轉正並分區辨識 Barcode、PO、GRN、Department、Requestor...';
-
-    let combinedRaw = '';
-    const angles = [90, 270, 0];
-
-    for (const deg of angles) {
-      const rot = deg === 0 ? dataUrl : await rotateImage(dataUrl, deg);
-      const mainCrop = await cropRegion(rot, 0.05, 0.05, 0.9, 0.9);
-      const txt = await ocrOnce(mainCrop).catch(() => '');
-      combinedRaw += `\n--- [${deg}°] ---\n${txt}`;
-      const cleanedTxt = fixDigits(txt);
-
-      // 1. Goods Receipt No.: 優先搵 10 位數字（例如 5004562328），避免誤捉 2006
-      if (!document.getElementById('f-grn').value) {
-        const grnAfter = extractByLabel(cleanedTxt, rules.grnLabel, 2);
-        const tenDigitMatch = grnAfter.match(/\b([0-9]{10})\b/) || cleanedTxt.match(/\b(500[0-9]{7})\b/);
-        if (tenDigitMatch) {
-          document.getElementById('f-grn').value = tenDigitMatch[1];
-        } else {
-          const fallbackGrn = grnAfter.match(/[0-9]{6,12}/);
-          if (fallbackGrn) document.getElementById('f-grn').value = fallbackGrn[0];
-        }
-      }
-
-      // 2. PO Number
-      if (!document.getElementById('f-po').value) {
-        const poAfter = extractByLabel(cleanedTxt, rules.poLabel, 2);
-        const poMatch = poAfter.match(/\b([0-9]{8,12})\b/) || poAfter.match(/[0-9A-Za-z-]{5,20}/);
-        if (poMatch) document.getElementById('f-po').value = poMatch[1] || poMatch[0];
-      }
-
-      // 3. Barcode（排除已經被認做 GRN 嘅 10 位數字，若未有則捉其他 7–11 位條碼）
-      if (!document.getElementById('f-barcode').value) {
-        const currentGrn = document.getElementById('f-grn').value;
-        const candidates = [...cleanedTxt.matchAll(/\b([0-9]{7,11})\b/g)].map(m => m[1]);
-        const bc = candidates.find(n => n !== currentGrn) || candidates[0];
-        if (bc) {
-          document.getElementById('f-barcode').value = bc;
-          applyDoorFromBarcode();
-        }
-      }
-
-      // 4. Department Name（自動清洗前面亂碼）
-      if (!document.getElementById('f-dept').value) {
-        const deptRaw = extractByLabel(txt, rules.deptLabel, 1);
-        const deptClean = cleanDeptText(deptRaw);
-        if (deptClean) document.getElementById('f-dept').value = deptClean;
-      }
-
-      // 5. Requestor（向下多搵幾行，亦試常見變體 Requestor / Requester / Buyer）
-      if (!document.getElementById('f-req').value) {
-        const reqVal =
-          extractByLabel(txt, rules.reqLabel, 3) ||
-          extractByLabel(txt, 'Requester', 3) ||
-          extractByLabel(txt, 'Buyer', 2);
-        if (reqVal) document.getElementById('f-req').value = cleanDeptText(reqVal) || reqVal;
-      }
-
-      if (
-        document.getElementById('f-barcode').value &&
-        document.getElementById('f-po').value &&
-        document.getElementById('f-grn').value &&
-        document.getElementById('f-dept').value
-      ) {
-        break;
-      }
-    }
-
-    document.getElementById('raw-ocr-output').value = combinedRaw.trim();
-    st.textContent = '✅ 辨識完成，請核對欄位（如有漏可點上方轉角度或手動補填）';
-  }
-
-  async function rotateAndReocr(deg) {
-    if (!currentPhoto) return alert('請先影相或揀相！');
-    currentPhoto = await rotateImage(currentPhoto, deg);
-    const img = document.getElementById('photo-preview');
-    img.src = currentPhoto;
-    await runSmartOcr(currentPhoto);
-  }
-
   document.getElementById('photo-input').addEventListener('change', async e => {
     const file = e.target.files[0];
     if (!file) return;
-    currentPhoto = await loadAndResizeImage(file, 1600);
+    draftDataUrl = await compressImage(file, 1100, 0.7);
     const img = document.getElementById('photo-preview');
-    img.src = currentPhoto;
+    img.src = draftDataUrl;
     img.style.display = 'block';
-    await runSmartOcr(currentPhoto);
   });
 
-  function saveEntry() {
-    const d = parseInt(document.getElementById('door-select').value, 10);
-    const cab = getCabByDoor(d);
-    const barcode = document.getElementById('f-barcode').value.trim();
-    const po = document.getElementById('f-po').value.trim();
-    const grn = document.getElementById('f-grn').value.trim();
-    const dept = document.getElementById('f-dept').value.trim();
-    const requestor = document.getElementById('f-req').value.trim();
-
-    if (!barcode && !po && !grn && !currentPhoto) {
-      return alert('請最少影一張相，或輸入 Barcode / PO / GRN！');
+  async function savePhoto() {
+    if (!draftDataUrl) {
+      return alert('請先撳「影相 / 揀相」影低單據或熱感紙！');
     }
 
-    if (isDoorBusy(d)) {
-      if (!confirm(`Door #${d} 目前已標記佔用，確定覆蓋嗎？`)) return;
-      logs = logs.filter(x => !(x.door === d && x.status === 'OCCUPIED'));
-    }
-
-    logs.unshift({
+    const now = new Date();
+    const approxBytes = Math.round((draftDataUrl.length * 3) / 4);
+    const record = {
       id: Date.now(),
-      time: new Date().toISOString(),
-      door: d,
-      cabinet: cab.name,
-      barcode,
-      po,
-      grn,
-      dept,
-      requestor,
-      status: 'OCCUPIED',
-      photo: currentPhoto
-    });
+      timeIso: now.toISOString(),
+      timeLabel: now.toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      bytes: approxBytes,
+      photo: draftDataUrl
+    };
 
     try {
-      localStorage.setItem('runner_logs_v10', JSON.stringify(logs));
+      await putToDb(record);
     } catch (_) {
-      logs = logs.map((item, idx) => idx > 4 ? { ...item, photo: '' } : item);
-      localStorage.setItem('runner_logs_v10', JSON.stringify(logs));
+      alert('⚠️ 裝置儲存空間已滿，請先匯出 JSON 並按「清空本機紀錄」釋放空間！');
+      return;
     }
 
-    ['f-barcode', 'f-po', 'f-grn', 'f-dept', 'f-req'].forEach(id => {
-      document.getElementById(id).value = '';
-    });
-    document.getElementById('status-text').textContent = '';
+    draftDataUrl = '';
     document.getElementById('photo-preview').style.display = 'none';
     document.getElementById('photo-input').value = '';
-    currentPhoto = '';
-
+    photos = await getAllFromDb();
     renderList();
-    refreshDoorDisplay();
-    alert(`✅ 已記錄 Door #${d}（${cab.name}）`);
+  }
+
+  async function deleteOne(id) {
+    await deleteFromDb(id);
+    photos = await getAllFromDb();
+    renderList();
+  }
+
+  async function clearAll() {
+    if (!photos.length) return;
+    if (!confirm('確定已匯出並交收完成，要清空本機所有相片紀錄嗎？')) return;
+    await clearDb();
+    photos = [];
+    renderList();
   }
 
   function renderList() {
-    const busyCnt = logs.filter(x => x.status === 'OCCUPIED').length;
-    document.getElementById('count-pill').textContent = `已入櫃: ${busyCnt} / 96`;
+    const totalBytes = photos.reduce((sum, item) => sum + (item.bytes || (item.photo ? item.photo.length * 0.75 : 0)), 0);
+    const mb = (totalBytes / (1024 * 1024)).toFixed(1);
+
+    document.getElementById('count-pill').textContent = `已影: ${photos.length} 張`;
+    const sizePill = document.getElementById('size-pill');
+    sizePill.textContent = `佔用: ${mb} MB`;
+    if (parseFloat(mb) >= 40) {
+      sizePill.style.color = '#fca5a5';
+    } else {
+      sizePill.style.color = '#fde68a';
+    }
 
     const list = document.getElementById('recent-list');
     list.innerHTML = '';
-    logs.slice(0, 8).forEach(item => {
-      const t = new Date(item.time).toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit' });
+
+    photos.forEach((item, idx) => {
+      const num = photos.length - idx;
+      const kb = Math.round((item.bytes || (item.photo ? item.photo.length * 0.75 : 0)) / 1024);
       const div = document.createElement('div');
       div.className = 'recent-item';
       div.innerHTML = `
-        <div>
-          <strong>Door #${String(item.door).padStart(2, '0')}</strong>（${item.cabinet}）
-          <div style="color:#cbd5e1; font-size:0.88rem;">
-            ${t} · 碼: ${item.barcode || '—'} · PO: ${item.po || '—'} · GRN: ${item.grn || '—'}
+        <div class="recent-left">
+          <img class="recent-thumb" src="${item.photo || ''}" alt="第${num}張" />
+          <div>
+            <div class="recent-time">#${num} · ${item.timeLabel}</div>
+            <div class="recent-sub">約 ${kb} KB · 待 Admin 處理</div>
           </div>
         </div>
-        <span class="badge-busy">已用</span>
+        <button class="btn-del" type="button" onclick="deleteOne(${item.id})">刪除</button>
       `;
       list.appendChild(div);
     });
   }
 
+  function exportJson() {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(photos, null, 2)], { type: 'application/json' }));
+    a.download = `Runner_Photos_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+  }
+
   function exportCsv() {
-    const headers = ['Time', 'Cabinet', 'Door', 'Barcode', 'PO', 'GRN', 'Department', 'Requestor', 'Status'];
-    const rows = logs.map(r => [
-      r.time, r.cabinet, r.door, r.barcode || '', r.po || '', r.grn || '', r.dept || '', r.requestor || '', r.status
+    const headers = ['Seq', 'Time', 'ISO_Time', 'Approx_KB', 'Has_Photo'];
+    const rows = photos.map((p, idx) => [
+      photos.length - idx,
+      p.timeLabel,
+      p.timeIso,
+      Math.round((p.bytes || 0) / 1024),
+      p.photo ? 'YES' : 'NO'
     ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
     const csv = '\uFEFF' + [headers.join(','), ...rows].join('\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
-    a.download = `Runner_Cabinet_Log_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `Runner_Photo_List_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
   }
 
-  function exportJson() {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' }));
-    a.download = `Runner_Cabinet_Backup_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-  }
-
-  loadRulesToInputs();
-  initSelect();
-  renderList();
+  (async function init() {
+    await openDb();
+    photos = await getAllFromDb();
+    renderList();
+  })();
 </script>
 </body>
 </html>
