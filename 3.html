@@ -1,0 +1,510 @@
+<!DOCTYPE html>  
+<html lang="zh-HK">  
+<head>  
+  <meta charset="UTF-8" />  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />  
+  <title>Runner 入櫃掃描（iOS 修復版）</title>  
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>  
+  <style>  
+    :root {  
+      --bg: #0f172a;  
+      --card: #1e293b;  
+      --card-light: #334155;  
+      --text: #f8fafc;  
+      --muted: #94a3b8;  
+      --accent: #38bdf8;  
+      --green: #22c55e;  
+      --amber: #f59e0b;  
+      --red: #ef4444;  
+      --border: #475569;  
+    }  
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft JhengHei", sans-serif; }  
+    body { margin: 0; background: var(--bg); color: var(--text); padding: 14px; }  
+  
+    .wrap { max-width: 720px; margin: 0 auto; }  
+    .top-bar {  
+      display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;  
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; margin-bottom: 14px;  
+    }  
+    .top-bar h1 { margin: 0; font-size: 1.2rem; }  
+    .pill { background: var(--card-light); padding: 6px 12px; border-radius: 999px; font-size: 0.92rem; font-weight: 700; }  
+  
+    .warn-box {  
+      background: rgba(245, 158, 11, 0.15); border: 1px solid var(--amber); color: #fde68a;  
+      border-radius: 12px; padding: 10px 14px; font-size: 0.9rem; margin-bottom: 14px; display: none;  
+    }  
+  
+    .box {  
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 14px;  
+    }  
+    h2 { margin: 0 0 10px; font-size: 1.15rem; }  
+  
+    .cam-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }  
+    @media (max-width: 520px) { .cam-grid { grid-template-columns: 1fr; } }  
+  
+    .cam-btn {  
+      display: flex; align-items: center; justify-content: center; gap: 8px;  
+      padding: 16px 12px; border-radius: 12px; border: 2px dashed var(--accent);  
+      background: rgba(56, 189, 248, 0.12); color: #fff; font-size: 1.1rem; font-weight: 800; cursor: pointer;  
+    }  
+    .cam-btn.grn { border-color: #a78bfa; background: rgba(167, 139, 250, 0.12); }  
+  
+    .thumbs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }  
+    .thumb-img {  
+      width: 100%; max-height: 180px; object-fit: contain; border-radius: 10px;  
+      background: #000; display: none; border: 1px solid var(--border);  
+    }  
+  
+    .status-text { margin-top: 10px; font-size: 0.98rem; color: var(--amber); font-weight: 700; min-height: 24px; }  
+  
+    .door-banner {  
+      background: #0f172a; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-top: 12px;  
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;  
+    }  
+    .door-big { font-size: 1.7rem; font-weight: 900; color: var(--accent); }  
+    .cab-sub { font-size: 0.98rem; color: #cbd5e1; }  
+  
+    label { display: block; font-size: 0.95rem; font-weight: 700; margin-bottom: 5px; color: #e2e8f0; }  
+    select, input[type="text"] {  
+      width: 100%; padding: 12px 13px; font-size: 1.08rem; border-radius: 10px;  
+      border: 2px solid var(--border); background: #0f172a; color: #fff;  
+    }  
+    select:focus, input[type="text"]:focus { outline: none; border-color: var(--accent); }  
+  
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }  
+    @media (max-width: 560px) { .grid-2 { grid-template-columns: 1fr; } }  
+  
+    .btn-save {  
+      width: 100%; padding: 18px; font-size: 1.3rem; font-weight: 900; border-radius: 12px;  
+      border: none; background: var(--green); color: #052e16; cursor: pointer; margin-top: 14px;  
+    }  
+  
+    details {  
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; margin-bottom: 14px;  
+    }  
+    summary { font-weight: 800; font-size: 1rem; cursor: pointer; color: var(--accent); }  
+    .btn-mini {  
+      margin-top: 10px; padding: 9px 14px; font-size: 0.92rem; font-weight: 700; border-radius: 8px;  
+      border: none; background: var(--accent); color: #082f49; cursor: pointer;  
+    }  
+  
+    .sub-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }  
+    .btn-sub {  
+      padding: 12px; font-size: 0.98rem; font-weight: 700; border-radius: 10px;  
+      border: 1px solid var(--border); background: var(--card-light); color: #fff; cursor: pointer;  
+    }  
+    .recent-list { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }  
+    .recent-item {  
+      background: #0f172a; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;  
+      display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 0.92rem;  
+    }  
+    .badge-busy { background: rgba(239, 68, 68, 0.2); color: #fca5a5; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 0.82rem; }  
+  </style>  
+</head>  
+<body>  
+<div class="wrap">  
+  <div class="top-bar">  
+    <h1>🏃 Runner 入櫃掃描</h1>  
+    <div class="pill" id="count-pill">已入櫃: 0 / 96</div>  
+  </div>  
+  
+  <div class="warn-box" id="file-protocol-warn">  
+    ⚠️ 偵測到你現時用 <strong>file://</strong> 本機檔案開緊，iOS 瀏覽器可能會封鎖背景 OCR 模組。建議放上 <strong>https://</strong> 網址（例如 GitHub Pages / Netlify / SharePoint）開啟；如現時離線，仍可直接影相、輸入 Barcode（尾兩位變門號）並按「完成入櫃」。  
+  </div>  
+  
+  <div class="box">  
+    <h2>1. 影相 / 填資料（Barcode 尾兩位認門號）</h2>  
+  
+    <div class="cam-grid">  
+      <label class="cam-btn" for="slip-input">  
+        🏷️ 影熱感紙（尾兩位=門號）  
+      </label>  
+      <label class="cam-btn grn" for="grn-input">  
+        📄 影 GRN 單（PO / Dept / Req）  
+      </label>  
+    </div>  
+    <input type="file" id="slip-input" accept="image/*" capture="environment" hidden />  
+    <input type="file" id="grn-input" accept="image/*" capture="environment" hidden />  
+  
+    <div class="thumbs">  
+      <img id="slip-preview" class="thumb-img" alt="熱感紙相片" />  
+      <img id="grn-preview" class="thumb-img" alt="GRN 相片" />  
+    </div>  
+  
+    <div class="status-text" id="status-text"></div>  
+  
+    <div class="door-banner">  
+      <div>  
+        <div class="door-big" id="show-door">Door #01</div>  
+        <div class="cab-sub" id="show-cab">所屬分區：Cabinet 1（門號 1–40）</div>  
+      </div>  
+      <div id="door-status-badge"></div>  
+    </div>  
+  
+    <div class="grid-2">  
+      <div>  
+        <label for="f-barcode">熱敏紙 Barcode（尾兩位自動變門號）</label>  
+        <input type="text" id="f-barcode" placeholder="例如: 637890132" oninput="applyDoorFromBarcode()" />  
+      </div>  
+      <div>  
+        <label for="door-select">門號（由 Barcode 尾兩位帶出；可手動改）</label>  
+        <select id="door-select" onchange="refreshDoorDisplay()"></select>  
+      </div>  
+      <div>  
+        <label for="f-po">PO Number</label>  
+        <input type="text" id="f-po" placeholder="由 P/O no: 捉出或手動輸入" />  
+      </div>  
+      <div>  
+        <label for="f-grn">Goods Receipt No.</label>  
+        <input type="text" id="f-grn" placeholder="由 Goods Receipt No.: 捉出" />  
+      </div>  
+      <div>  
+        <label for="f-dept">Department Name</label>  
+        <input type="text" id="f-dept" placeholder="由 Department: 捉出" />  
+      </div>  
+      <div>  
+        <label for="f-req">Requestor（下方/對應值）</label>  
+        <input type="text" id="f-req" placeholder="由 Requestor 下方捉出" />  
+      </div>  
+    </div>  
+  
+    <button class="btn-save" onclick="saveEntry()">✅ 完成入櫃並鎖定門號</button>  
+  </div>  
+  
+  <details>  
+    <summary>⚙️ 自訂 OCR 標籤設定（PO / Department / GRN / Requestor）</summary>  
+    <div class="grid-2">  
+      <div>  
+        <label for="cfg-po">PO Number 標籤</label>  
+        <input type="text" id="cfg-po" />  
+      </div>  
+      <div>  
+        <label for="cfg-grn">Goods Receipt No. 標籤</label>  
+        <input type="text" id="cfg-grn" />  
+      </div>  
+      <div>  
+        <label for="cfg-dept">Department 標籤</label>  
+        <input type="text" id="cfg-dept" />  
+      </div>  
+      <div>  
+        <label for="cfg-req">Requestor 標籤</label>  
+        <input type="text" id="cfg-req" />  
+      </div>  
+    </div>  
+    <button class="btn-mini" type="button" onclick="saveRules()">💾 儲存標籤設定</button>  
+  </details>  
+  
+  <div class="box">  
+    <h2>📋 最近入櫃紀錄與匯出</h2>  
+    <div class="sub-actions">  
+      <button class="btn-sub" onclick="exportCsv()">📊 匯出 CSV</button>  
+      <button class="btn-sub" onclick="exportJson()">💾 匯出 JSON</button>  
+    </div>  
+    <div class="recent-list" id="recent-list"></div>  
+  </div>  
+</div>  
+  
+<script>  
+  if (location.protocol === 'file:') {  
+    document.getElementById('file-protocol-warn').style.display = 'block';  
+  }  
+  
+  const CABINETS = [  
+    { id: 'CAB1', name: 'Cabinet 1', range: '1–40', start: 1, end: 40 },  
+    { id: 'CAB2', name: 'Cabinet 2', range: '41–51', start: 41, end: 51 },  
+    { id: 'CAB3', name: 'Cabinet 3', range: '52–66', start: 52, end: 66 },  
+    { id: 'CAB4', name: 'Cabinet 4', range: '67–96', start: 67, end: 96 }  
+  ];  
+  
+  const DEFAULT_RULES = {  
+    poLabel: 'P/O no:',  
+    grnLabel: 'Goods Receipt No.:',  
+    deptLabel: 'Department:',  
+    reqLabel: 'Requestor'  
+  };  
+  
+  let rules = { ...DEFAULT_RULES, ...JSON.parse(localStorage.getItem('runner_ocr_rules_v2') || '{}') };  
+  let logs = JSON.parse(localStorage.getItem('runner_logs_v6') || '[]');  
+  let slipPhoto = '';  
+  let grnPhoto = '';  
+  
+  function getCabByDoor(d) {  
+    return CABINETS.find(c => d >= c.start && d <= c.end);  
+  }  
+  
+  function loadRulesToInputs() {  
+    document.getElementById('cfg-po').value = rules.poLabel;  
+    document.getElementById('cfg-grn').value = rules.grnLabel;  
+    document.getElementById('cfg-dept').value = rules.deptLabel;  
+    document.getElementById('cfg-req').value = rules.reqLabel;  
+  }  
+  
+  function saveRules() {  
+    rules = {  
+      poLabel: document.getElementById('cfg-po').value.trim() || DEFAULT_RULES.poLabel,  
+      grnLabel: document.getElementById('cfg-grn').value.trim() || DEFAULT_RULES.grnLabel,  
+      deptLabel: document.getElementById('cfg-dept').value.trim() || DEFAULT_RULES.deptLabel,  
+      reqLabel: document.getElementById('cfg-req').value.trim() || DEFAULT_RULES.reqLabel  
+    };  
+    localStorage.setItem('runner_ocr_rules_v2', JSON.stringify(rules));  
+    alert('✅ 已儲存自訂 OCR 標籤！');  
+  }  
+  
+  function initSelect() {  
+    const sel = document.getElementById('door-select');  
+    sel.innerHTML = '';  
+    for (let d = 1; d <= 96; d++) {  
+      const cab = getCabByDoor(d);  
+      const opt = document.createElement('option');  
+      opt.value = d;  
+      opt.textContent = `Door #${String(d).padStart(2, '0')} (${cab.name}: ${cab.range})`;  
+      sel.appendChild(opt);  
+    }  
+    refreshDoorDisplay();  
+  }  
+  
+  function isDoorBusy(d) {  
+    return logs.some(x => x.door === d && x.status === 'OCCUPIED');  
+  }  
+  
+  function refreshDoorDisplay() {  
+    const d = parseInt(document.getElementById('door-select').value, 10);  
+    const cab = getCabByDoor(d);  
+    document.getElementById('show-door').textContent = `Door #${String(d).padStart(2, '0')}`;  
+    document.getElementById('show-cab').textContent = `所屬分區：${cab.name}（門號 ${cab.range}）`;  
+  
+    const badge = document.getElementById('door-status-badge');  
+    badge.innerHTML = isDoorBusy(d)  
+      ? '<span class="badge-busy">⚠️ 已佔用</span>'  
+      : '<span style="color:#4ade80; font-weight:700;">🟢 可入櫃</span>';  
+  }  
+  
+  function applyDoorFromBarcode() {  
+    const raw = document.getElementById('f-barcode').value.trim();  
+    const digits = raw.replace(/\D/g, '');  
+    if (digits.length >= 2) {  
+      const lastTwo = parseInt(digits.slice(-2), 10);  
+      if (lastTwo >= 1 && lastTwo <= 96) {  
+        document.getElementById('door-select').value = lastTwo;  
+        refreshDoorDisplay();  
+      }  
+    }  
+  }  
+  
+  function compressImage(file, maxWidth = 1500, quality = 0.8) {  
+    return new Promise((resolve, reject) => {  
+      const reader = new FileReader();  
+      reader.onload = e => {  
+        const img = new Image();  
+        img.onload = () => {  
+          const scale = img.width > maxWidth ? maxWidth / img.width : 1;  
+          const canvas = document.createElement('canvas');  
+          canvas.width = Math.round(img.width * scale);  
+          canvas.height = Math.round(img.height * scale);  
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);  
+          resolve(canvas.toDataURL('image/jpeg', quality));  
+        };  
+        img.onerror = reject;  
+        img.src = e.target.result;  
+      };  
+      reader.onerror = reject;  
+      reader.readAsDataURL(file);  
+    });  
+  }  
+  
+  function escapeRegex(str) {  
+    return String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');  
+  }  
+  
+  function extractAfterLabel(rawText, label, nextLineFallback = false) {  
+    if (!rawText || !label) return '';  
+    const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);  
+    const lblPat = new RegExp(escapeRegex(label), 'i');  
+  
+    for (let i = 0; i < lines.length; i++) {  
+      if (lblPat.test(lines[i])) {  
+        const same = lines[i].replace(lblPat, '').replace(/^[:#\-\s]+/, '').trim();  
+        if (same) return same;  
+        if (nextLineFallback && i + 1 < lines.length) {  
+          return lines[i + 1].trim();  
+        }  
+      }  
+    }  
+    return '';  
+  }  
+  
+  async function safeOcr(dataUrl) {  
+    if (typeof Tesseract === 'undefined' || !Tesseract.recognize) {  
+      throw new Error('Tesseract not loaded');  
+    }  
+    const timer = new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout')), 15000));  
+    const job = Tesseract.recognize(dataUrl, 'eng');  
+    const res = await Promise.race([job, timer]);  
+    return res.data?.text || '';  
+  }  
+  
+  // 影熱感紙：嘗試捉 8–10 位條碼數字，並用尾兩位定門號  
+  document.getElementById('slip-input').addEventListener('change', async e => {  
+    const file = e.target.files[0];  
+    if (!file) return;  
+    slipPhoto = await compressImage(file, 1200, 0.8);  
+    const img = document.getElementById('slip-preview');  
+    img.src = slipPhoto;  
+    img.style.display = 'block';  
+  
+    const st = document.getElementById('status-text');  
+    st.textContent = '⏳ 正在辨識熱感紙 Barcode...';  
+    try {  
+      const txt = await safeOcr(slipPhoto);  
+      const m = txt.match(/\b([0-9]{8,11})\b/);  
+      if (m) {  
+        document.getElementById('f-barcode').value = m[1];  
+        applyDoorFromBarcode();  
+        st.textContent = `✅ 認出 Barcode ${m[1]}，已帶出門號`;  
+      } else {  
+        st.textContent = '⚠️ 未自動讀出 Barcode 數字，請直接輸入尾兩位變門號';  
+      }  
+    } catch (_) {  
+      st.textContent = '⚠️ 無法啟動背景 OCR，請直接輸入 Barcode 數字（尾兩位變門號）';  
+    }  
+  });  
+  
+  // 影 GRN 單：擷取 PO / GRN / Department / Requestor  
+  document.getElementById('grn-input').addEventListener('change', async e => {  
+    const file = e.target.files[0];  
+    if (!file) return;  
+    grnPhoto = await compressImage(file, 1600, 0.82);  
+    const img = document.getElementById('grn-preview');  
+    img.src = grnPhoto;  
+    img.style.display = 'block';  
+  
+    const st = document.getElementById('status-text');  
+    st.textContent = '⏳ 正在辨識 GRN 單據欄位...';  
+    try {  
+      const txt = await safeOcr(grnPhoto);  
+      if (!document.getElementById('f-po').value) {  
+        const v = extractAfterLabel(txt, rules.poLabel, false).match(/[0-9A-Za-z-]{4,20}/);  
+        if (v) document.getElementById('f-po').value = v[0];  
+      }  
+      if (!document.getElementById('f-grn').value) {  
+        const v = extractAfterLabel(txt, rules.grnLabel, false).match(/[0-9A-Za-z-]{4,20}/);  
+        if (v) document.getElementById('f-grn').value = v[0];  
+      }  
+      if (!document.getElementById('f-dept').value) {  
+        const v = extractAfterLabel(txt, rules.deptLabel, false);  
+        if (v) document.getElementById('f-dept').value = v;  
+      }  
+      if (!document.getElementById('f-req').value) {  
+        const v = extractAfterLabel(txt, rules.reqLabel, true);  
+        if (v) document.getElementById('f-req').value = v;  
+      }  
+      st.textContent = '✅ GRN 辨識完成，請核對後按「完成入櫃」';  
+    } catch (_) {  
+      st.textContent = '⚠️ 無法啟動背景 OCR，相片已留底，可直接輸入欄位並按「完成入櫃」';  
+    }  
+  });  
+  
+  function saveEntry() {  
+    const d = parseInt(document.getElementById('door-select').value, 10);  
+    const cab = getCabByDoor(d);  
+    const barcode = document.getElementById('f-barcode').value.trim();  
+    const po = document.getElementById('f-po').value.trim();  
+    const grn = document.getElementById('f-grn').value.trim();  
+    const dept = document.getElementById('f-dept').value.trim();  
+    const requestor = document.getElementById('f-req').value.trim();  
+  
+    if (!barcode && !po && !grn && !slipPhoto && !grnPhoto) {  
+      return alert('請最少影一張相，或輸入 Barcode / PO / GRN！');  
+    }  
+  
+    if (isDoorBusy(d)) {  
+      if (!confirm(`Door #${d} 目前已標記佔用，確定覆蓋嗎？`)) return;  
+      logs = logs.filter(x => !(x.door === d && x.status === 'OCCUPIED'));  
+    }  
+  
+    logs.unshift({  
+      id: Date.now(),  
+      time: new Date().toISOString(),  
+      door: d,  
+      cabinet: cab.name,  
+      barcode,  
+      po,  
+      grn,  
+      dept,  
+      requestor,  
+      status: 'OCCUPIED',  
+      slipPhoto,  
+      grnPhoto  
+    });  
+  
+    try {  
+      localStorage.setItem('runner_logs_v6', JSON.stringify(logs));  
+    } catch (_) {  
+      logs = logs.map((item, idx) => idx > 4 ? { ...item, slipPhoto: '', grnPhoto: '' } : item);  
+      localStorage.setItem('runner_logs_v6', JSON.stringify(logs));  
+    }  
+  
+    ['f-barcode', 'f-po', 'f-grn', 'f-dept', 'f-req'].forEach(id => {  
+      document.getElementById(id).value = '';  
+    });  
+    document.getElementById('status-text').textContent = '';  
+    document.getElementById('slip-preview').style.display = 'none';  
+    document.getElementById('grn-preview').style.display = 'none';  
+    document.getElementById('slip-input').value = '';  
+    document.getElementById('grn-input').value = '';  
+    slipPhoto = '';  
+    grnPhoto = '';  
+  
+    renderList();  
+    refreshDoorDisplay();  
+    alert(`✅ 已記錄 Door #${d}（${cab.name}）`);  
+  }  
+  
+  function renderList() {  
+    const busyCnt = logs.filter(x => x.status === 'OCCUPIED').length;  
+    document.getElementById('count-pill').textContent = `已入櫃: ${busyCnt} / 96`;  
+  
+    const list = document.getElementById('recent-list');  
+    list.innerHTML = '';  
+    logs.slice(0, 8).forEach(item => {  
+      const t = new Date(item.time).toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit' });  
+      const div = document.createElement('div');  
+      div.className = 'recent-item';  
+      div.innerHTML = `  
+        <div>  
+          <strong>Door #${String(item.door).padStart(2, '0')}</strong>（${item.cabinet}）  
+          <div style="color:#cbd5e1; font-size:0.88rem;">  
+            ${t} · 碼: ${item.barcode || '—'} · PO: ${item.po || '—'} · Req: ${item.requestor || '—'}  
+          </div>  
+        </div>  
+        <span class="badge-busy">已用</span>  
+      `;  
+      list.appendChild(div);  
+    });  
+  }  
+  
+  function exportCsv() {  
+    const headers = ['Time', 'Cabinet', 'Door', 'Barcode', 'PO', 'GRN', 'Department', 'Requestor', 'Status'];  
+    const rows = logs.map(r => [  
+      r.time, r.cabinet, r.door, r.barcode || '', r.po || '', r.grn || '', r.dept || '', r.requestor || '', r.status  
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));  
+    const csv = '\uFEFF' + [headers.join(','), ...rows].join('\n');  
+    const a = document.createElement('a');  
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));  
+    a.download = `Runner_Cabinet_Log_${new Date().toISOString().slice(0, 10)}.csv`;  
+    a.click();  
+  }  
+  
+  function exportJson() {  
+    const a = document.createElement('a');  
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' }));  
+    a.download = `Runner_Cabinet_Backup_${new Date().toISOString().slice(0, 10)}.json`;  
+    a.click();  
+  }  
+  
+  loadRulesToInputs();  
+  initSelect();  
+  renderList();  
+</script>  
+</body>  
+</html>  
