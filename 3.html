@@ -135,7 +135,7 @@
     <div class="grid-2">
       <div>
         <label for="f-barcode">熱敏紙 Barcode（尾兩位自動變門號）</label>
-        <input type="text" id="f-barcode" placeholder="例如: 252208137" oninput="applyDoorFromBarcode()" />
+        <input type="text" id="f-barcode" placeholder="例如: 637890132" oninput="applyDoorFromBarcode()" />
       </div>
       <div>
         <label for="door-select">門號（由 Barcode 尾兩位帶出；可手動改）</label>
@@ -213,8 +213,8 @@
     reqLabel: 'Requestor'
   };
 
-  let rules = { ...DEFAULT_RULES, ...JSON.parse(localStorage.getItem('runner_ocr_rules_v4') || '{}') };
-  let logs = JSON.parse(localStorage.getItem('runner_logs_v8') || '[]');
+  let rules = { ...DEFAULT_RULES, ...JSON.parse(localStorage.getItem('runner_ocr_rules_v5') || '{}') };
+  let logs = JSON.parse(localStorage.getItem('runner_logs_v10') || '[]');
   let currentPhoto = '';
 
   function getCabByDoor(d) {
@@ -235,7 +235,7 @@
       deptLabel: document.getElementById('cfg-dept').value.trim() || DEFAULT_RULES.deptLabel,
       reqLabel: document.getElementById('cfg-req').value.trim() || DEFAULT_RULES.reqLabel
     };
-    localStorage.setItem('runner_ocr_rules_v4', JSON.stringify(rules));
+    localStorage.setItem('runner_ocr_rules_v5', JSON.stringify(rules));
     alert('✅ 已儲存自訂 OCR 標籤！');
   }
 
@@ -286,6 +286,19 @@
     }
   }
 
+  // 清除 Department 前面常見嘅 OCR 亂碼/邊框符號，保留英數字、空格、&、-、/
+  function cleanDeptText(raw) {
+    let s = String(raw || '').trim();
+    // 常見亂碼如 "—H#A3i8H FinanceSS Corp Adm" -> 搵第一個正常英文字詞起點
+    const matchStart = s.match(/([A-Z][a-zA-Z]{2,}(?:\s+[A-Za-z0-9&/.-]+)*)/);
+    if (matchStart) {
+      s = matchStart[1].trim();
+    } else {
+      s = s.replace(/^[^A-Za-z0-9]+/, '').trim();
+    }
+    return s;
+  }
+
   function loadAndResizeImage(file, maxWidth = 1600) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -329,7 +342,6 @@
     });
   }
 
-  // 裁切指定百分比區域 (rx, ry, rw, rh 皆為 0..1) 並做高對比黑白
   function cropRegion(dataUrl, rx, ry, rw, rh) {
     return new Promise(resolve => {
       const img = new Image();
@@ -340,7 +352,6 @@
         const sh = Math.max(10, Math.round(img.height * rh));
 
         const c = document.createElement('canvas');
-        // 放大 1.5 倍方便細字識別
         c.width = Math.round(sw * 1.5);
         c.height = Math.round(sh * 1.5);
         const ctx = c.getContext('2d');
@@ -365,7 +376,7 @@
     return String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-  function extractByLabel(rawText, label, belowCount = 1) {
+  function extractByLabel(rawText, label, belowCount = 2) {
     if (!rawText || !label) return '';
     const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const pat = new RegExp(escapeRegex(label), 'i');
@@ -373,10 +384,12 @@
     for (let i = 0; i < lines.length; i++) {
       if (pat.test(lines[i])) {
         const after = lines[i].replace(pat, '').replace(/^[:#\-\s]+/, '').trim();
-        if (after) return after;
+        if (after && /[A-Za-z0-9]/.test(after)) return after;
         for (let k = 1; k <= belowCount && i + k < lines.length; k++) {
           const val = lines[i + k].trim();
-          if (val && !/[:：]$/.test(val)) return val;
+          if (val && /[A-Za-z0-9]/.test(val) && !/[:：]$/.test(val)) {
+            return val;
+          }
         }
       }
     }
@@ -389,7 +402,6 @@
     return res.data?.text || '';
   }
 
-  // 針對打橫/直排版面：先試 90° 同 270° 轉正，再裁切主要文字區辨識
   async function runSmartOcr(dataUrl) {
     const st = document.getElementById('status-text');
     st.textContent = '⏳ 正在轉正並分區辨識 Barcode、PO、GRN、Department、Requestor...';
@@ -399,44 +411,62 @@
 
     for (const deg of angles) {
       const rot = deg === 0 ? dataUrl : await rotateImage(dataUrl, deg);
-      // 裁切中下/右半及上半主要文字區（避開左邊手寫大字）
       const mainCrop = await cropRegion(rot, 0.05, 0.05, 0.9, 0.9);
       const txt = await ocrOnce(mainCrop).catch(() => '');
       combinedRaw += `\n--- [${deg}°] ---\n${txt}`;
+      const cleanedTxt = fixDigits(txt);
 
+      // 1. Goods Receipt No.: 優先搵 10 位數字（例如 5004562328），避免誤捉 2006
+      if (!document.getElementById('f-grn').value) {
+        const grnAfter = extractByLabel(cleanedTxt, rules.grnLabel, 2);
+        const tenDigitMatch = grnAfter.match(/\b([0-9]{10})\b/) || cleanedTxt.match(/\b(500[0-9]{7})\b/);
+        if (tenDigitMatch) {
+          document.getElementById('f-grn').value = tenDigitMatch[1];
+        } else {
+          const fallbackGrn = grnAfter.match(/[0-9]{6,12}/);
+          if (fallbackGrn) document.getElementById('f-grn').value = fallbackGrn[0];
+        }
+      }
+
+      // 2. PO Number
+      if (!document.getElementById('f-po').value) {
+        const poAfter = extractByLabel(cleanedTxt, rules.poLabel, 2);
+        const poMatch = poAfter.match(/\b([0-9]{8,12})\b/) || poAfter.match(/[0-9A-Za-z-]{5,20}/);
+        if (poMatch) document.getElementById('f-po').value = poMatch[1] || poMatch[0];
+      }
+
+      // 3. Barcode（排除已經被認做 GRN 嘅 10 位數字，若未有則捉其他 7–11 位條碼）
       if (!document.getElementById('f-barcode').value) {
-        const bc = fixDigits(txt).match(/\b([0-9]{8,12})\b/);
+        const currentGrn = document.getElementById('f-grn').value;
+        const candidates = [...cleanedTxt.matchAll(/\b([0-9]{7,11})\b/g)].map(m => m[1]);
+        const bc = candidates.find(n => n !== currentGrn) || candidates[0];
         if (bc) {
-          document.getElementById('f-barcode').value = bc[1];
+          document.getElementById('f-barcode').value = bc;
           applyDoorFromBarcode();
         }
       }
 
-      if (!document.getElementById('f-po').value) {
-        const po = fixDigits(extractByLabel(txt, rules.poLabel, 1)).match(/[0-9A-Za-z-]{4,20}/);
-        if (po) document.getElementById('f-po').value = po[0];
-      }
-
-      if (!document.getElementById('f-grn').value) {
-        const grn = fixDigits(extractByLabel(txt, rules.grnLabel, 1)).match(/[0-9A-Za-z-]{4,20}/);
-        if (grn) document.getElementById('f-grn').value = grn[0];
-      }
-
+      // 4. Department Name（自動清洗前面亂碼）
       if (!document.getElementById('f-dept').value) {
-        const dept = extractByLabel(txt, rules.deptLabel, 1);
-        if (dept) document.getElementById('f-dept').value = dept;
+        const deptRaw = extractByLabel(txt, rules.deptLabel, 1);
+        const deptClean = cleanDeptText(deptRaw);
+        if (deptClean) document.getElementById('f-dept').value = deptClean;
       }
 
+      // 5. Requestor（向下多搵幾行，亦試常見變體 Requestor / Requester / Buyer）
       if (!document.getElementById('f-req').value) {
-        const req = extractByLabel(txt, rules.reqLabel, 2);
-        if (req) document.getElementById('f-req').value = req;
+        const reqVal =
+          extractByLabel(txt, rules.reqLabel, 3) ||
+          extractByLabel(txt, 'Requester', 3) ||
+          extractByLabel(txt, 'Buyer', 2);
+        if (reqVal) document.getElementById('f-req').value = cleanDeptText(reqVal) || reqVal;
       }
 
-      // 只要主要欄位已經齊，就唔使再轉其他角度浪費時間
       if (
         document.getElementById('f-barcode').value &&
         document.getElementById('f-po').value &&
-        document.getElementById('f-grn').value
+        document.getElementById('f-grn').value &&
+        document.getElementById('f-dept').value
       ) {
         break;
       }
@@ -497,10 +527,10 @@
     });
 
     try {
-      localStorage.setItem('runner_logs_v8', JSON.stringify(logs));
+      localStorage.setItem('runner_logs_v10', JSON.stringify(logs));
     } catch (_) {
       logs = logs.map((item, idx) => idx > 4 ? { ...item, photo: '' } : item);
-      localStorage.setItem('runner_logs_v8', JSON.stringify(logs));
+      localStorage.setItem('runner_logs_v10', JSON.stringify(logs));
     }
 
     ['f-barcode', 'f-po', 'f-grn', 'f-dept', 'f-req'].forEach(id => {
